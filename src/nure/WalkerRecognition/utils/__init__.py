@@ -179,7 +179,6 @@ def prepare_train_datasets(train_images, train_names, train_labels,
 
 
 def slide_extract(image, window_size=(80, 200), step=12):
-
     hIm, wIm = image.shape[:2]
     windows = []
     w1_range = np.arange(0, wIm - window_size[0], step)
@@ -191,6 +190,11 @@ def slide_extract(image, window_size=(80, 200), step=12):
     coords = np.array([(w1, w2, 0, 200) for w1, w2 in width_pairs])
     features = get_hog(windows)
     return coords, np.asarray(features)
+
+
+def get_labels_by_name(name, labels):
+    return list(filter(lambda label: label['id'] == int(name),
+                       labels))
 
 
 def set_labels_to_windows(image_y, labels, windows_coordinates, names, distance_threshold=10):
@@ -211,8 +215,7 @@ def set_labels_to_windows(image_y, labels, windows_coordinates, names, distance_
             windows_y = []
             name = names[i]
             # Retrieve labels which have id == int(name)
-            current_labels = list(filter(lambda label: label['id'] == int(name),
-                                         labels))
+            current_labels = get_labels_by_name(name, labels)
 
             for coords in windows_coordinates[i]:
                 x0 = coords[0]
@@ -244,21 +247,62 @@ def prepare_test_datasets(test_images, image_names, test_labels,
                                           [image_names[i]],
                                           distance_threshold=d_thresh)
         test_y_by_windows.append(windows_y)
-    return coordinates_list, test_x, test_y_by_windows
+    return np.asarray(coordinates_list), np.asarray(test_x), np.asarray(test_y_by_windows)
+
+
+def get_overlapping_ratio(prediction_window, true_window):
+    width = prediction_window[1] - prediction_window[0]
+    overlapping = width - abs(prediction_window[0] - true_window[0])
+    return overlapping / width
+
+
+def count_matching(predicted_detections, true_detections):
+    if len(true_detections) == 0 and len(predicted_detections) != 0:
+        return (0, len(predicted_detections), 0)
+    pedestrian_matches = [False] * len(true_detections)
+    TP_det = 0
+    FP = 0
+    for prediction in predicted_detections:
+        true_positive_matches = []
+        for i, true_det in true_detections:
+            if get_overlapping_ratio(prediction, true_det) >= 0.5:
+                true_positive_matches.append(True)
+                TP_det += 1
+                if not pedestrian_matches[i]:
+                    pedestrian_matches[i] = True
+            else:
+                true_positive_matches.append(False)
+        if not any(true_positive_matches):
+            FP += 1
+    TP = sum(pedestrian_matches)
+    return TP_det, FP, TP
 
 
 # Подсчитывает значение метки изображения по меткам каждого окна
 # и подсчитывает точность
-def composite_accuracy(test_y, pred_y,
-                       test_images,
-                       coordinates):
-    precision, recall = 0, 0
-    true_positive_det = 0
-    general_true = test_y[test_y == 1]
+def composite_evaluation(predicted_detections,
+                         image_names,
+                         true_labels):
+    true_positive_det = 0.0
+    general_true = float(len(true_labels))
+    false_positive = 0.0
+    true_positive_ped = 0.0
 
-    # recall = true_positive_pedestrian / true_pedestrians
-    # precision = true_positive_detections / all_detections
+    for i, current_detections in enumerate(predicted_detections):
+        true_current_labels = get_labels_by_name(image_names[i],
+                                                 true_labels)
+        true_detections = [(label['y1'],
+                            label['y2'],
+                            label['x1'],
+                            label['x2']) for label in true_current_labels]
 
+        TP_det, FP, TP = count_matching(current_detections, true_detections)
+        true_positive_det += TP_det
+        false_positive += FP
+        true_positive_ped += TP
+
+    precision = true_positive_ped / general_true
+    recall = true_positive_det / (true_positive_det + false_positive)
     return precision, recall
 
 
@@ -270,19 +314,19 @@ def cluster_windows(windows, threshold):
     distances = np.abs(np.subtract(x1[1:], x1[:-1]))
     i = 0
     current_cluster = [i]
-    while i < len(windows)-1:
+    while i < len(windows) - 1:
         if distances[i] < threshold:
-            current_cluster.append(i+1)
+            current_cluster.append(i + 1)
         else:
             clusters.append(current_cluster)
-            current_cluster = [i+1]
+            current_cluster = [i + 1]
         i += 1
     clusters.append(current_cluster)
     return clusters
 
 
 def compress_clusters(boxes, clusters):
-    if boxes.shape[0] <= 1 or boxes.shape[1] <=1:
+    if boxes.shape[0] <= 1 or boxes.shape[1] <= 1:
         return boxes
     compressed_boxes = []
     for cluster in clusters:
@@ -291,9 +335,9 @@ def compress_clusters(boxes, clusters):
     return compressed_boxes
 
 
-def detect(predictions, windows_coordinates, image, overlap_threshold=0.2):
+def detect(windows_predictions, windows_coordinates, overlap_threshold=0.2):
     all_windows = np.asarray(windows_coordinates)
-    positive_windows = all_windows[list(map(lambda y: y == 1.0, predictions))]
+    positive_windows = all_windows[list(map(lambda y: y == 1.0, windows_predictions))]
     if len(positive_windows) == 0:
         return []
 
@@ -311,5 +355,3 @@ def show_images_with_boxes(windows_coordinates, image):
     cv2.imshow("Original", image)
     cv2.imshow("Windows minimizing", bounded_image)
     cv2.waitKey(0)
-
-
