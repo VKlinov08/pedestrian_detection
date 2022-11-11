@@ -1,0 +1,4 @@
+liblinear-official==2.45.0
+numpy==1.19.5
+opencv-python==4.6.0.66
+scipy==1.5.4
