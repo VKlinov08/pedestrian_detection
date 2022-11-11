@@ -1,7 +1,7 @@
 import cv2
 import pathlib
 import numpy as np
-from sklearn.cluster import MeanShift, estimate_bandwidth
+
 
 def load_images(images_path: pathlib.Path, flag=cv2.IMREAD_COLOR, suffix='.png',
                 with_names=False):
@@ -83,7 +83,6 @@ def create_y_by_images(images_names, labels):
     return y
 
 
-# Переписать и разложить на 2 функции
 def crop_images(images, labels, names, with_y=False):
     cropped_images = []
     name_pointer = 0
@@ -98,8 +97,8 @@ def crop_images(images, labels, names, with_y=False):
         y = []
         unique_ids = set(unique_ids_from_labels(labels))
         for label in labels:
-            # Текущее изображение является фоном и не присутствует в labels
-            # Его метка класса -1 и можно брать любое окно - оно не будет содержать пешехода
+            # Current image is a background and it is missing from the .idl labels.
+            # Its class label is -1 and we can choose a random window.
             while True:
                 if int(names[name_pointer]) not in unique_ids:
                     f_label = {'id': names[name_pointer],
@@ -112,6 +111,8 @@ def crop_images(images, labels, names, with_y=False):
                     y.append(-1)
                     name_pointer += 1
                     continue
+                # We can get multiple labels (2+ pedestriand ) on a single image,
+                # so we need to check it.
                 if label['id'] == int(names[name_pointer]):
                     new_image = crop_image(images[name_pointer], label)
                     cropped_images.append(new_image)
@@ -124,6 +125,7 @@ def crop_images(images, labels, names, with_y=False):
 
 def cut_background(image, label, patch_width, max_overlapping=30):
     max_width = image.shape[1]
+    # Loop until we get a position pretty far from a pedestrian.
     while True:
         x1_rand = np.random.randint(patch_width, max_width)
 
@@ -152,19 +154,13 @@ def prepare_train_datasets(train_images, train_names, train_labels,
                            patch_width=80, setsize=250, overlapping=30):
     walkers_patches = crop_images(train_images, train_labels, train_names)
     walkers_descriptors = get_hog(walkers_patches)
+    walker_labels = create_y_by_images(train_names, train_labels)
 
     background_images = cut_backgrounds(train_images, train_labels, setsize, patch_width, overlapping)
     background_descriptors = get_hog(background_images)
-
-    # for bg in background_images[::2]:
-    #     cv2.imshow('bg', bg)
-    #     cv2.waitKey(0)
-    # cv2.destroyAllWindows()
-
+    background_labels = [-1] * setsize
 
     train_hogs = walkers_descriptors + background_descriptors
-    walker_labels = create_y_by_images(train_names, train_labels)
-    background_labels = [-1] * setsize
     train_y = np.asarray(walker_labels + background_labels)
     return np.asarray(train_hogs), train_y
 
@@ -182,23 +178,19 @@ def prepare_train_datasets(train_images, train_names, train_labels,
 #     return coordinates_list, test_x, test_y_by_windows
 
 
-def prepare_test_datasets(test_images, image_names, test_labels,
-                          window_size=(80, 200), window_step=10, d_thresh=10):
-    coordinates_list = []
-    test_x = []
-    for image in test_images:
-        coordinates, descriptors = slide_extract(image, window_size=window_size, step=window_step)
-        test_x.append(descriptors)
-        coordinates_list.append(coordinates)
+def slide_extract(image, window_size=(80, 200), step=12):
 
-    test_y = create_y_by_images(image_names, test_labels)
-    test_y_by_windows = []
-    for i, y in enumerate(test_y):
-        windows_y = set_labels_to_windows([y], test_labels, [coordinates_list[i]], [image_names[i]],
-                                          distance_threshold=d_thresh)
-        test_y_by_windows.append(windows_y)
-    # test_y_by_windows = set_labels_to_windows(test_y, test_labels, coordinates_list, image_names)
-    return coordinates_list, test_x, test_y_by_windows
+    hIm, wIm = image.shape[:2]
+    windows = []
+    w1_range = np.arange(0, wIm - window_size[0], step)
+    w2_range = np.arange(window_size[0], wIm, step)
+    width_pairs = np.column_stack((w1_range, w2_range))
+    for w1, w2 in width_pairs:
+        windows.append(image[0:200, w1:w2])
+
+    coords = np.array([(w1, w2, 0, 200) for w1, w2 in width_pairs])
+    features = get_hog(windows)
+    return coords, np.asarray(features)
 
 
 def set_labels_to_windows(image_y, labels, windows_coordinates, names, distance_threshold=10):
@@ -218,7 +210,7 @@ def set_labels_to_windows(image_y, labels, windows_coordinates, names, distance_
         else:
             windows_y = []
             name = names[i]
-            # Извлечь label в которых id == int(name)
+            # Retrieve labels which have id == int(name)
             current_labels = list(filter(lambda label: label['id'] == int(name),
                                          labels))
 
@@ -233,75 +225,52 @@ def set_labels_to_windows(image_y, labels, windows_coordinates, names, distance_
     return labels_to_windows
 
 
-def slide_extract(image, window_size=(80, 200), channel="RGB", step=12):
-    # Converting to grayscale
-    # if channel == "RGB":
-    #     img = cv2.cvtColor(image, cv2.COLOR_RGB2GRAY)
-    # elif channel == "BGR":
-    #     img = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
-    # elif channel.lower( ) != "grayscale" or channel.lower( ) != "gray":
-    #     raise Exception("Invalid channel type")
+def prepare_test_datasets(test_images, image_names, test_labels,
+                          window_size=(80, 200), window_step=10, d_thresh=10):
+    coordinates_list = []
+    test_x = []
+    for image in test_images:
+        coordinates, descriptors = slide_extract(image, window_size=window_size, step=window_step)
+        test_x.append(descriptors)
+        coordinates_list.append(coordinates)
 
-    hIm, wIm = image.shape[:2]
-    windows = []
-    w1_range = np.arange(0, wIm - window_size[0], step)
-    w2_range = np.arange(window_size[0], wIm, step)
-    width_pairs = np.column_stack((w1_range, w2_range))
-    for w1, w2 in width_pairs:
-        windows.append(image[0:200, w1:w2])
-
-    coords = np.array([(w1, w2, 0, 200) for w1, w2 in width_pairs])
-    features = get_hog(windows)
-    return coords, np.asarray(features)
+    test_y = create_y_by_images(image_names, test_labels)
+    test_y_by_windows = []
+    # Set label = +1 to windows that are pretty close to a pedestrian an -1 otherwise.
+    for i, y in enumerate(test_y):
+        windows_y = set_labels_to_windows([y],
+                                          test_labels,
+                                          [coordinates_list[i]],
+                                          [image_names[i]],
+                                          distance_threshold=d_thresh)
+        test_y_by_windows.append(windows_y)
+    return coordinates_list, test_x, test_y_by_windows
 
 
 # Подсчитывает значение метки изображения по меткам каждого окна
 # и подсчитывает точность
-# Вынести отрисовку квадрата
 def composite_accuracy(test_y, pred_y,
                        test_images,
                        coordinates):
     precision, recall = 0, 0
+    true_positive_det = 0
+    general_true = test_y[test_y == 1]
+
     # recall = true_positive_pedestrian / true_pedestrians
     # precision = true_positive_detections / all_detections
 
     return precision, recall
 
 
-def detect(predictions, windows_coordinates, image, overlap_threshold=0.2):
-    boxes = np.asarray(windows_coordinates)
-    positive_boxes = boxes[list(map(lambda y: y == 1.0, predictions))]
-    # show_images_with_boxes(positive_boxes, image)
-    if len(positive_boxes) == 0:
-        return []
-
-    clusters = cluster_boxes(positive_boxes, overlap_threshold)
-    chosen_boxes = compress_clusters(positive_boxes, clusters)
-
-    show_images_with_boxes(chosen_boxes, image)
-    return chosen_boxes
-
-
-def show_images_with_boxes(windows_coordinates, image):
-    boxes = np.asarray(windows_coordinates)
-
-    bounded_image = image.copy( )
-    for (startX, endX, startY, endY) in boxes:
-        cv2.rectangle(bounded_image, (startX, startY), (endX, endY), (0, 255, 0), 2)
-    cv2.imshow("Original", image)
-    cv2.imshow("Windows minimizing", bounded_image)
-    cv2.waitKey(0)
-
-
-def cluster_boxes(boxes, threshold):
-    if len(boxes) <= 1:
-        return boxes
+def cluster_windows(windows, threshold):
+    if len(windows) <= 1:
+        return windows
     clusters = []
-    x1 = boxes[:, 0]
+    x1 = windows[:, 0]
     distances = np.abs(np.subtract(x1[1:], x1[:-1]))
     i = 0
     current_cluster = [i]
-    while i < len(boxes)-1:
+    while i < len(windows)-1:
         if distances[i] < threshold:
             current_cluster.append(i+1)
         else:
@@ -320,4 +289,27 @@ def compress_clusters(boxes, clusters):
         center = np.median(boxes[cluster], axis=0).astype(np.int32)
         compressed_boxes.append(center)
     return compressed_boxes
+
+
+def detect(predictions, windows_coordinates, image, overlap_threshold=0.2):
+    all_windows = np.asarray(windows_coordinates)
+    positive_windows = all_windows[list(map(lambda y: y == 1.0, predictions))]
+    if len(positive_windows) == 0:
+        return []
+
+    clusters = cluster_windows(positive_windows, overlap_threshold)
+    chosen_windows = compress_clusters(positive_windows, clusters)
+    return chosen_windows
+
+
+def show_images_with_boxes(windows_coordinates, image):
+    boxes = np.asarray(windows_coordinates)
+
+    bounded_image = image.copy( )
+    for (startX, endX, startY, endY) in boxes:
+        cv2.rectangle(bounded_image, (startX, startY), (endX, endY), (0, 255, 0), 2)
+    cv2.imshow("Original", image)
+    cv2.imshow("Windows minimizing", bounded_image)
+    cv2.waitKey(0)
+
 
