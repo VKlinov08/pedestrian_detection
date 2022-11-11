@@ -275,12 +275,6 @@ def detect(predictions, windows_coordinates, image, overlap_threshold=0.2):
     if len(positive_boxes) == 0:
         return []
 
-    # MEAN SHIFT
-    # bandwidth = max(estimate_bandwidth(positive_boxes, quantile=0.85), 1)
-    # ms = MeanShift(bandwidth=bandwidth, cluster_all=False)
-    # ms.fit(positive_boxes)
-    # chosen_boxes = ms.cluster_centers_.astype(np.int32)
-
     clusters = cluster_boxes(positive_boxes, overlap_threshold)
     chosen_boxes = compress_clusters(positive_boxes, clusters)
 
@@ -327,49 +321,3 @@ def compress_clusters(boxes, clusters):
         compressed_boxes.append(center)
     return compressed_boxes
 
-
-def non_max_suppression_fast(boxes, overlapThresh):
-    if len(boxes) == 0:
-        return []
-    # if the bounding boxes integers, convert them to floats --
-    # this is important since we'll be doing a bunch of divisions
-    if boxes.dtype.kind == "i":
-        boxes = boxes.astype("float")
-    # initialize the list of picked indexes
-    pick = []
-    # grab the coordinates of the bounding boxes
-    x1 = boxes[:, 0]
-    # y1 = boxes[:, 2]
-    x2 = boxes[:, 1]
-    # y2 = boxes[:, 3]
-    # compute the area of the bounding boxes and sort the bounding
-    # boxes by the bottom-right y-coordinate of the bounding box
-    area = (x2 - x1 + 1)
-    idxs = np.argsort(x2)
-    # keep looping while some indexes still remain in the indexes
-    # list
-    while len(idxs) > 0:
-        # grab the last index in the indexes list and add the
-        # index value to the list of picked indexes
-        last = len(idxs) - 1
-        i = idxs[last]
-        pick.append(i)
-        # find the largest (x, y) coordinates for the start of
-        # the bounding box and the smallest (x, y) coordinates
-        # for the end of the bounding box
-        xx1 = np.maximum(x1[i], x1[idxs[:last]])
-        # yy1 = np.maximum(y1[i], y1[idxs[:last]])
-        xx2 = np.minimum(x2[i], x2[idxs[:last]])
-        # yy2 = np.minimum(y2[i], y2[idxs[:last]])
-        # compute the width and height of the bounding box
-        w = np.maximum(0, xx2 - xx1 + 1)
-        # h = np.maximum(0, yy2 - yy1 + 1)
-        # compute the ratio of overlap
-        overlap = w / area[idxs[:last]]
-        # delete all
-        # indexes from the index list that have
-        idxs = np.delete(idxs, np.concatenate(([last],
-                                               np.where(overlap > overlapThresh)[0])))
-    # return only the bounding boxes that were picked using the
-    # integer data type
-    return boxes[pick].astype("int")
