@@ -20,7 +20,7 @@ def load_images(images_path: pathlib.Path, flag=cv2.IMREAD_COLOR, suffix='.png',
             names.append(img_name)
 
     if with_names:
-        return train_images, names
+        return train_images, np.asarray(names, dtype=object)
     return train_images
 
 
@@ -247,7 +247,7 @@ def prepare_test_datasets(test_images, image_names, test_labels,
                                           [image_names[i]],
                                           distance_threshold=d_thresh)
         test_y_by_windows.append(windows_y)
-    return np.asarray(coordinates_list), np.asarray(test_x), np.asarray(test_y_by_windows)
+    return np.asarray(coordinates_list, dtype=object), np.asarray(test_x), np.asarray(test_y_by_windows)
 
 
 def get_overlapping_ratio(prediction_window, true_window):
@@ -264,7 +264,7 @@ def count_matching(predicted_detections, true_detections):
     FP = 0
     for prediction in predicted_detections:
         true_positive_matches = []
-        for i, true_det in true_detections:
+        for i, true_det in enumerate(true_detections):
             if get_overlapping_ratio(prediction, true_det) >= 0.5:
                 true_positive_matches.append(True)
                 TP_det += 1
@@ -281,7 +281,6 @@ def count_matching(predicted_detections, true_detections):
 # Подсчитывает значение метки изображения по меткам каждого окна
 # и подсчитывает точность
 def composite_evaluation(predicted_detections,
-                         image_names,
                          true_labels):
     true_positive_det = 0.0
     general_true = float(len(true_labels))
@@ -289,12 +288,11 @@ def composite_evaluation(predicted_detections,
     true_positive_ped = 0.0
 
     for i, current_detections in enumerate(predicted_detections):
-        true_current_labels = get_labels_by_name(image_names[i],
-                                                 true_labels)
-        true_detections = [(label['y1'],
-                            label['y2'],
+        true_current_labels = true_labels[i]
+        true_detections = [(label['x0'],
                             label['x1'],
-                            label['x2']) for label in true_current_labels]
+                            label['y0'],
+                            label['y1']) for label in true_current_labels]
 
         TP_det, FP, TP = count_matching(current_detections, true_detections)
         true_positive_det += TP_det

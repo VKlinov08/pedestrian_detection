@@ -32,13 +32,13 @@ if __name__ == '__main__':
     prob = problem(train_y, train_x)
     param = parameter('-s 3')
     # Fitting of the model
-    m = train(prob, param)
+    # m = train(prob, param)
     # save_model(str(SAVE_MODEL_PATH), m)
-    # m = load_model(str(SAVE_MODEL_PATH))
+    m = load_model(str(SAVE_MODEL_PATH))
 
     # Testing the model
     predicted_y = []
-    testing_indices = np.arange(0, len(test_images), 4)
+    testing_indices = np.arange(0, len(test_images), 1)
     for i in testing_indices:
         p_label, p_acc, p_val = predict(test_y[i], test_x[i], m)
         predicted_y.append(p_label)
@@ -48,13 +48,14 @@ if __name__ == '__main__':
     # Getting windows with detected pedestrians
     for i, j in zip(testing_indices, range(len(testing_indices))):
         current_detections = detect(predicted_y[j], windows_coordinates[i], step * 3.5)
-        show_images_with_boxes(current_detections, test_images[i])
+        # show_images_with_boxes(current_detections, test_images[i])
         image_detections.append(current_detections)
 
     # Evaluating results
     current_true_labels = [get_labels_by_name(name, all_test_labels) for name in test_names[testing_indices]]
-    precision, recall = composite_evaluation(image_detections, test_names[testing_indices], current_true_labels)
-
+    precision, recall = composite_evaluation(image_detections, current_true_labels)
+    print(f"Presicion of the model = %.2f" % precision)
+    print(f"Recall of the model = %.2f" % recall)
     pass
 
 
