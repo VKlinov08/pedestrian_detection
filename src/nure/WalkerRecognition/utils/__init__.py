@@ -25,7 +25,7 @@ def load_images(images_path: pathlib.Path, flag=cv2.IMREAD_COLOR, suffix='.png',
 
 
 def get_hog(images):
-    # Скорректировать параметры под текущую задачу
+    # Parameters adjusted for the current task
     winSize = (80, 200)
     blockSize = (8, 8)
     blockStride = (8, 8)
@@ -163,20 +163,7 @@ def prepare_train_datasets(train_images, train_names, train_labels,
     train_hogs = walkers_descriptors + background_descriptors
     train_y = np.asarray(walker_labels + background_labels)
     return np.asarray(train_hogs), train_y
-
-
-# def prepare_test_datasets(test_images, image_names, test_labels, window_size=(80, 200), window_step=10):
-#     coordinates_list = []
-#     test_x = []
-#     for image in test_images:
-#         coordinates, descriptors = slide_extract(image, window_size=window_size, step=window_step)
-#         test_x.extend(descriptors)
-#         coordinates_list.append(coordinates)
-#
-#     test_y = create_y_by_images(image_names, test_labels)
-#     test_y_by_windows = set_labels_to_windows(test_y, test_labels, coordinates_list, image_names)
-#     return coordinates_list, test_x, test_y_by_windows
-
+                             
 
 def slide_extract(image, window_size=(80, 200), step=12):
     hIm, wIm = image.shape[:2]
@@ -278,8 +265,8 @@ def count_matching(predicted_detections, true_detections):
     return TP_det, FP, TP
 
 
-# Подсчитывает значение метки изображения по меткам каждого окна
-# и подсчитывает точность
+# Counts the image label value from the labels of each window
+# and calculates the accuracy
 def composite_evaluation(predicted_detections,
                          true_labels):
     true_positive_det = 0.0
